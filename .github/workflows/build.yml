@@ -68,8 +68,10 @@ jobs:
         run: |
           curl -fsSL https://mirrors.edge.kernel.org/pub/software/utils/dtc/dtc-1.4.7.tar.gz -o /tmp/dtc.tar.gz
           mkdir -p /tmp/dtc && tar -xf /tmp/dtc.tar.gz -C /tmp/dtc --strip-components=1
-          make -C /tmp/dtc -j$(nproc)
-          sudo make -C /tmp/dtc PREFIX=/usr/local install
+          # NOTE: fdtdump/fdtget don't compile with modern gcc (-Werror);
+          # build only the dtc binary itself and install it by hand.
+          make -C /tmp/dtc -j$(nproc) dtc
+          sudo install -m 0755 /tmp/dtc/dtc /usr/local/bin/dtc
           echo "/usr/local/bin" >> $GITHUB_PATH
           export PATH="/usr/local/bin:$PATH"
           which -a dtc
