@@ -3,14 +3,22 @@ name: Build Rubber Soul kernel (courbet)
 on:
   workflow_dispatch:
     inputs:
-      defconfig:
-        description: 'Defconfig'
+      source:
+        description: 'Kernel source'
         required: false
-        default: 'courbet_user_defconfig'
+        default: 'blacksmith'
+        type: choice
+        options:
+          - blacksmith
+          - stock
 
-# Rubber Soul kernel: stock 4.14 Xiaomi kernel for courbet (Mi 11 Lite 4G),
-# for MIUI / HyperOS stock ROMs. Result is an AnyKernel3 flashable zip.
-# Source: MiCode/Xiaomi_Kernel_OpenSource @ courbet-r-oss (the only OSS branch).
+# Rubber Soul kernel for courbet (Mi 11 Lite 4G), MIUI / HyperOS stock ROMs.
+# Sources:
+#   blacksmith (default): Blacksmithyogi/kernel_xiaomi_courbet @ A15,
+#     maintained 4.14.356 tree with courbet_defconfig, dtc-clean.
+#   stock: MiCode/Xiaomi_Kernel_OpenSource @ courbet-r-oss (official OSS),
+#     needs kernel-patches/stock (delabel generic pinctrl dupes).
+# Result is an AnyKernel3 flashable zip.
 
 concurrency:
   group: rubber-soul-${{ github.ref }}
@@ -22,10 +30,8 @@ jobs:
     timeout-minutes: 120
 
     env:
-      KERNEL_REPO: https://github.com/MiCode/Xiaomi_Kernel_OpenSource.git
-      KERNEL_BRANCH: courbet-r-oss
       # LineageOS mirrors on GitHub (googlesource +archive refs are dead):
-      # clang 12 r416183b = stock kernel clang for 4.14/4.19 era
+      # clang 12 r416183b = kernel clang for 4.14/4.19 era
       CLANG_REPO: https://github.com/LineageOS/android_prebuilts_clang_kernel_linux-x86_clang-r416183b.git
       CLANG_BRANCH: lineage-20.0
       GCC64_REPO: https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git
@@ -44,12 +50,27 @@ jobs:
             build-essential bc bison flex libssl-dev libelf-dev libncurses-dev \
             cpio dwarves python3 git wget curl zip unzip gcc-aarch64-linux-gnu
 
+      - name: Resolve source
+        run: |
+          if [ "${{ inputs.source }}" = "stock" ]; then
+            echo "KERNEL_REPO=https://github.com/MiCode/Xiaomi_Kernel_OpenSource.git" >> $GITHUB_ENV
+            echo "KERNEL_BRANCH=courbet-r-oss" >> $GITHUB_ENV
+            echo "DEFCONFIG=courbet_user_defconfig" >> $GITHUB_ENV
+            echo "PATCH_DIR=kernel-patches/stock" >> $GITHUB_ENV
+          else
+            echo "KERNEL_REPO=https://github.com/Blacksmithyogi/kernel_xiaomi_courbet.git" >> $GITHUB_ENV
+            echo "KERNEL_BRANCH=A15" >> $GITHUB_ENV
+            echo "DEFCONFIG=courbet_defconfig" >> $GITHUB_ENV
+            echo "PATCH_DIR=kernel-patches/blacksmith" >> $GITHUB_ENV
+          fi
+          cat $GITHUB_ENV | grep -E "KERNEL|DEFCONFIG|PATCH"
+
       - name: Clone kernel (shallow, single branch)
         run: |
           git clone --depth 1 --single-branch --branch "$KERNEL_BRANCH" "$KERNEL_REPO" kernel
           cd kernel
           git rev-parse --short HEAD
-          test -f arch/arm64/configs/${{ inputs.defconfig }} || { echo "defconfig missing"; ls arch/arm64/configs/ | head; exit 1; }
+          test -f arch/arm64/configs/"$DEFCONFIG" || { echo "defconfig $DEFCONFIG missing"; ls arch/arm64/configs/ | head; exit 1; }
 
       - name: Fetch toolchains
         run: |
@@ -63,10 +84,14 @@ jobs:
       - name: Apply kernel patches
         run: |
           cd kernel
-          for p in "$GITHUB_WORKSPACE"/kernel-patches/*.patch; do
-            echo "applying $p"
-            git apply --verbose "$p"
-          done
+          if compgen -G "$GITHUB_WORKSPACE/$PATCH_DIR/*.patch" > /dev/null; then
+            for p in "$GITHUB_WORKSPACE"/$PATCH_DIR/*.patch; do
+              echo "applying $p"
+              git apply --verbose "$p"
+            done
+          else
+            echo "no patches in $PATCH_DIR"
+          fi
 
       - name: Build
         working-directory: kernel
@@ -74,7 +99,7 @@ jobs:
           set -o pipefail
           export ARCH=arm64 SUBARCH=arm64
           export PATH="$GITHUB_WORKSPACE/toolchains/clang/bin:$PATH"
-          make O=out ARCH=arm64 ${{ inputs.defconfig }}
+          make O=out ARCH=arm64 "$DEFCONFIG"
           make -j$(nproc) O=out ARCH=arm64 \
             CC=clang \
             CLANG_TRIPLE=aarch64-linux-gnu- \
@@ -83,6 +108,7 @@ jobs:
             2>&1 | tee "$GITHUB_WORKSPACE/build-kernel.log"
           echo "--- outputs ---"
           ls -lh out/arch/arm64/boot/
+          find out -name "*courbet*.dtbo" -o -name "dtbo.img" | head
 
       - name: Package AnyKernel3
         run: |
@@ -101,6 +127,7 @@ jobs:
           cd ..
           ls -lh rubber-soul-courbet.zip
           cp "kernel/out/arch/arm64/boot/$IMG" ./kernel-image-"$IMG"
+          find kernel/out -name "*courbet*.dtbo" -exec cp {} ./ \; || true
 
       - name: Upload
         if: always()
@@ -110,6 +137,7 @@ jobs:
           path: |
             rubber-soul-courbet.zip
             kernel-image-*
+            *.dtbo
             build-kernel.log
           if-no-files-found: warn
           retention-days: 30
