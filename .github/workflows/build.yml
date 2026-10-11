@@ -34,8 +34,6 @@ jobs:
       # clang 12 r416183b = kernel clang for 4.14/4.19 era
       CLANG_REPO: https://github.com/LineageOS/android_prebuilts_clang_kernel_linux-x86_clang-r416183b.git
       CLANG_BRANCH: lineage-20.0
-      GCC32_REPO: https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9.git
-      GCC_BRANCH: lineage-19.1
 
     steps:
       - uses: actions/checkout@v4
@@ -47,7 +45,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential bc bison flex libssl-dev libelf-dev libncurses-dev \
-            cpio dwarves python3 git wget curl zip unzip gcc-aarch64-linux-gnu
+            cpio dwarves python3 git wget curl zip unzip gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
 
       - name: Resolve source
         run: |
@@ -72,16 +70,16 @@ jobs:
           test -f arch/arm64/configs/"$DEFCONFIG" || { echo "defconfig $DEFCONFIG missing"; ls arch/arm64/configs/ | head; exit 1; }
 
       - name: Fetch toolchains
-        # NOTE: 64-bit binutils come from Ubuntu (gcc-aarch64-linux-gnu):
-        # the gcc-4.9 prebuilt objcopy (2.25) chokes on vdso32
-        # ("Not enough room for program headers"). Only the 32-bit gcc
-        # is still needed (vdso32 is compiled with CROSS_COMPILE_ARM32).
+        # NOTE: only clang comes from mirrors now. The 32-bit side uses
+        # Ubuntu's gcc-arm-linux-gnueabi: gcc-4.9 era ld produced a vdso32
+        # layout that even modern objcopy rejects. The 64-bit side uses
+        # Ubuntu binutils via CROSS_COMPILE=aarch64-linux-gnu- (same reason:
+        # prebuilt 4.9 objcopy choked on vdso32 too).
         run: |
           git clone --depth 1 --single-branch --branch "$CLANG_BRANCH" "$CLANG_REPO" toolchains/clang
-          git clone --depth 1 --single-branch --branch "$GCC_BRANCH" "$GCC32_REPO" toolchains/gcc32
           ./toolchains/clang/bin/clang --version | head -2
           aarch64-linux-gnu-gcc --version | head -1
-          ls toolchains/gcc32/bin/ | head -3
+          arm-linux-gnueabi-gcc --version | head -1
 
       - name: Apply kernel patches
         run: |
@@ -106,7 +104,7 @@ jobs:
             CC=clang \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE="aarch64-linux-gnu-" \
-            CROSS_COMPILE_ARM32="$GITHUB_WORKSPACE/toolchains/gcc32/bin/arm-linux-androideabi-" \
+            CROSS_COMPILE_ARM32="arm-linux-gnueabi-" \
             2>&1 | tee "$GITHUB_WORKSPACE/build-kernel.log"
           echo "--- outputs ---"
           ls -lh out/arch/arm64/boot/
