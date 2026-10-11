@@ -1,3 +1,5 @@
+![Rubber Soul Kernel](assets/banner.png)
+
 # Rubber Soul Kernel
 
 > *In my life, I've flashed them all...*
@@ -19,17 +21,10 @@ Built from the only official Xiaomi OSS branch: `MiCode/Xiaomi_Kernel_OpenSource
 
 ## How to flash
 
-```powershell
-adb reboot recovery   # TWRP / OrangeFox
-# Install -> rubber-soul-courbet.zip
-```
+Boot into TWRP / OrangeFox, flash the zip, reboot. The installer patches `boot` in place, system is untouched.
 
 Only for **courbet / courbetin** on stock-based ROMs (MIUI / HyperOS).
-Always keep a backup of stock `boot` — *you've got to hide your backups away*:
-
-```powershell
-fastboot flash boot boot-stock.img
-```
+Always keep a backup of stock `boot` — *you've got to hide your backups away*.
 
 ## Norwegian Wood (notes)
 
