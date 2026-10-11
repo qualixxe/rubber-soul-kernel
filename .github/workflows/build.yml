@@ -60,9 +60,25 @@ jobs:
           ls toolchains/gcc64/bin/ | head -3
           ls toolchains/gcc32/bin/ | head -3
 
+      - name: Install era-correct dtc 1.4.7
+        # Stock Xiaomi dts reuses labels for board overrides (22 dupes in the
+        # courbet tree). dtc >= 1.5 treats that as a fatal error, dtc 1.4.x
+        # only warns — same as when Xiaomi built this kernel. Build it first
+        # on PATH so the kernel uses it instead of Ubuntu's dtc 1.6.
+        run: |
+          curl -fsSL https://mirrors.edge.kernel.org/pub/software/utils/dtc/dtc-1.4.7.tar.gz -o /tmp/dtc.tar.gz
+          mkdir -p /tmp/dtc && tar -xf /tmp/dtc.tar.gz -C /tmp/dtc --strip-components=1
+          make -C /tmp/dtc -j$(nproc)
+          sudo make -C /tmp/dtc PREFIX=/usr/local install
+          echo "/usr/local/bin" >> $GITHUB_PATH
+          export PATH="/usr/local/bin:$PATH"
+          which -a dtc
+          dtc --version
+
       - name: Build
         working-directory: kernel
         run: |
+          set -o pipefail
           export ARCH=arm64 SUBARCH=arm64
           export PATH="$GITHUB_WORKSPACE/toolchains/clang/bin:$PATH"
           make O=out ARCH=arm64 ${{ inputs.defconfig }}
