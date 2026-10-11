@@ -24,7 +24,7 @@ Built from the only official Xiaomi OSS branch: `MiCode/Xiaomi_Kernel_OpenSource
 Boot into TWRP / OrangeFox, flash the zip, reboot. The installer patches `boot` in place, system is untouched.
 
 Only for **courbet / courbetin** on stock-based ROMs (MIUI / HyperOS).
-Always keep a backup of stock `boot` — *you've got to hide your backups away*.
+Always keep a backup of stock `boot`.
 
 ## Norwegian Wood (notes)
 
