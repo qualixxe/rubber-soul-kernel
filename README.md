@@ -2,7 +2,7 @@
 
 # Rubber Soul Kernel
 
-> *In my life, I've flashed them all...*
+> *In my life, I've loved them all...*
 
 Stock 4.14 kernel for **Xiaomi Mi 11 Lite 4G (courbet)** for MIUI / HyperOS stock ROMs.
 Built from the only official Xiaomi OSS branch: `MiCode/Xiaomi_Kernel_OpenSource @ courbet-r-oss`.
