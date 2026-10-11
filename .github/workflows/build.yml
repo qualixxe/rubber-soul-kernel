@@ -70,7 +70,10 @@ jobs:
           mkdir -p /tmp/dtc && tar -xf /tmp/dtc.tar.gz -C /tmp/dtc --strip-components=1
           # NOTE: fdtdump/fdtget don't compile with modern gcc (-Werror);
           # build only the dtc binary itself and install it by hand.
-          make -C /tmp/dtc -j$(nproc) dtc
+          # CFLAGS override: makefile uses plain `=` so this replaces it —
+          # same flags minus -Werror, plus -fcommon (gcc>=10 defaults to
+          # -fno-common and breaks yylloc linking).
+          make -C /tmp/dtc -j$(nproc) dtc CFLAGS="-g -Os -fcommon -w"
           sudo install -m 0755 /tmp/dtc/dtc /usr/local/bin/dtc
           echo "/usr/local/bin" >> $GITHUB_PATH
           export PATH="/usr/local/bin:$PATH"
