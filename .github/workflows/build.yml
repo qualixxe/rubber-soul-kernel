@@ -34,7 +34,6 @@ jobs:
       # clang 12 r416183b = kernel clang for 4.14/4.19 era
       CLANG_REPO: https://github.com/LineageOS/android_prebuilts_clang_kernel_linux-x86_clang-r416183b.git
       CLANG_BRANCH: lineage-20.0
-      GCC64_REPO: https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git
       GCC32_REPO: https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9.git
       GCC_BRANCH: lineage-19.1
 
@@ -73,12 +72,15 @@ jobs:
           test -f arch/arm64/configs/"$DEFCONFIG" || { echo "defconfig $DEFCONFIG missing"; ls arch/arm64/configs/ | head; exit 1; }
 
       - name: Fetch toolchains
+        # NOTE: 64-bit binutils come from Ubuntu (gcc-aarch64-linux-gnu):
+        # the gcc-4.9 prebuilt objcopy (2.25) chokes on vdso32
+        # ("Not enough room for program headers"). Only the 32-bit gcc
+        # is still needed (vdso32 is compiled with CROSS_COMPILE_ARM32).
         run: |
           git clone --depth 1 --single-branch --branch "$CLANG_BRANCH" "$CLANG_REPO" toolchains/clang
-          git clone --depth 1 --single-branch --branch "$GCC_BRANCH" "$GCC64_REPO" toolchains/gcc64
           git clone --depth 1 --single-branch --branch "$GCC_BRANCH" "$GCC32_REPO" toolchains/gcc32
           ./toolchains/clang/bin/clang --version | head -2
-          ls toolchains/gcc64/bin/ | head -3
+          aarch64-linux-gnu-gcc --version | head -1
           ls toolchains/gcc32/bin/ | head -3
 
       - name: Apply kernel patches
@@ -103,7 +105,7 @@ jobs:
           make -j$(nproc) O=out ARCH=arm64 \
             CC=clang \
             CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE="$GITHUB_WORKSPACE/toolchains/gcc64/bin/aarch64-linux-android-" \
+            CROSS_COMPILE="aarch64-linux-gnu-" \
             CROSS_COMPILE_ARM32="$GITHUB_WORKSPACE/toolchains/gcc32/bin/arm-linux-androideabi-" \
             2>&1 | tee "$GITHUB_WORKSPACE/build-kernel.log"
           echo "--- outputs ---"
