@@ -1,0 +1,105 @@
+name: Build Aciss21 courbet kernel
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Kernel branch'
+        required: false
+        default: 'oem'
+        type: choice
+        options:
+          - oem
+          - aosp
+      defconfig:
+        description: 'Defconfig (vendor/ path inside kernel tree)'
+        required: false
+        default: 'vendor/courbet_defconfig'
+
+# Toolchain and build flags mirror the upstream author's own workflow
+# (Aciss21/kernel_xiaomi_sm6150 .github/workflows/reforging.yml) so the
+# kernel is produced the way its author builds and tests it.
+#
+# IMPORTANT: this tree uses DT overlays (CONFIG_BUILD_ARM64_DT_OVERLAY=y),
+# so boot + dtbo.img + dtb.img must be flashed together.
+
+concurrency:
+  group: aciss-kernel-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          sudo apt-get clean
+          df -h
+
+      - name: Prepare environment
+        run: |
+          sudo apt update -y
+          sudo apt install -y bc cpio flex bison git python-is-python3 tar aria2 perl wget curl lz4 libssl-dev zip
+
+          mkdir clang && cd clang
+          curl -LO https://raw.githubusercontent.com/Neutron-Toolchains/antman/main/antman
+          chmod +x antman
+          ./antman -S
+          ./antman --patch=glibc
+          cd ..
+
+          git clone --depth=1 -b main https://github.com/greenforce-project/gcc-arm64 gcc64
+          git clone --depth=1 -b main https://github.com/greenforce-project/gcc-arm gcc32
+
+          echo "CLANG_PATH=$GITHUB_WORKSPACE/clang" >> "$GITHUB_ENV"
+          echo "GCC64_PATH=$GITHUB_WORKSPACE/gcc64" >> "$GITHUB_ENV"
+          echo "GCC32_PATH=$GITHUB_WORKSPACE/gcc32" >> "$GITHUB_ENV"
+
+      - name: Checkout kernel branch
+        run: |
+          git fetch --depth 1 origin "${{ inputs.branch }}"
+          git checkout -B "${{ inputs.branch }}" FETCH_HEAD
+          git rev-parse --short HEAD
+          ls arch/arm64/configs/vendor/ | grep -E 'courbet|sweet' || true
+
+      - name: Build kernel
+        run: |
+          export PATH="$CLANG_PATH/bin:$GCC64_PATH/bin:$GCC32_PATH/bin:$PATH"
+          export KBUILD_BUILD_USER=Qualixxe
+          export KBUILD_BUILD_HOST=RubberSoul
+          export KBUILD_COMPILER_STRING="Neutron clang version 24.0.0"
+
+          make O=out ARCH=arm64 ${{ inputs.defconfig }}
+          make -j"$(nproc --all)" O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC=clang \
+            CLANG_TRIPLE="$CLANG_PATH/aarch64-linux-gnu-" \
+            CROSS_COMPILE="$GCC64_PATH/bin/aarch64-elf-" \
+            CROSS_COMPILE_ARM32="$GCC32_PATH/bin/arm-eabi-" \
+            2>&1 | tee "$GITHUB_WORKSPACE/build-kernel.log"
+
+      - name: Collect outputs
+        run: |
+          echo "--- boot dir ---"
+          ls -lh out/arch/arm64/boot/
+          mkdir -p artifacts
+          for f in Image.gz Image.gz-dtb Image dtbo.img dtb.img; do
+            if [ -f "out/arch/arm64/boot/$f" ]; then cp "out/arch/arm64/boot/$f" artifacts/; fi
+          done
+          ls -lh artifacts/
+
+      - name: Upload raw kernel files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aciss-kernel-files
+          path: |
+            artifacts/*
+            build-kernel.log
+          if-no-files-found: warn
+          retention-days: 30
