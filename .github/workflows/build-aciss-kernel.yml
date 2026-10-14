@@ -64,7 +64,8 @@ jobs:
 
       - name: Checkout kernel branch
         run: |
-          git fetch --depth 1 origin "${{ inputs.branch }}"
+          git remote add kernel https://github.com/Aciss21/kernel_xiaomi_sm6150.git
+          git fetch --depth 1 kernel "${{ inputs.branch }}"
           git checkout -B "${{ inputs.branch }}" FETCH_HEAD
           git rev-parse --short HEAD
           ls arch/arm64/configs/vendor/ | grep -E 'courbet|sweet' || true
