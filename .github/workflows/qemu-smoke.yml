@@ -27,7 +27,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             build-essential bc bison flex libssl-dev libelf-dev libncurses-dev \
             cpio python3 git wget curl zip unzip gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
-            qemu-system-arm
+            qemu-system-arm ipxe-qemu
 
       - name: Clone kernel and toolchain
         run: |
@@ -92,6 +92,7 @@ jobs:
           timeout 180 qemu-system-aarch64 -M virt -cpu cortex-a72 -smp 2 -m 2048 \
             -kernel kernel/out/arch/arm64/boot/Image \
             -initrd initramfs.cpio.gz \
+            -nic none \
             -nographic -no-reboot \
             -append "console=ttyAMA0,115200 earlycon=pl011,0x09000000 rdinit=/init panic=10 loglevel=7" \
             2>&1 | tee qemu-serial.log | tail -120
