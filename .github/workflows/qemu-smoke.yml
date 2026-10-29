@@ -1,0 +1,111 @@
+name: QEMU smoke test (courbet)
+
+on:
+  workflow_dispatch:
+
+# Boots the blacksmith A15 tree with a virt-friendly config in qemu-system-aarch64
+# (-M virt): PL011 console + virtio + devtmpfs on top of courbet_defconfig.
+# Proves the tree reaches userspace and carries the RubberSoul localversion.
+
+jobs:
+  qemu:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+
+    env:
+      CLANG_REPO: https://github.com/LineageOS/android_prebuilts_clang_kernel_linux-x86_clang-r416183b.git
+      CLANG_BRANCH: lineage-20.0
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential bc bison flex libssl-dev libelf-dev libncurses-dev \
+            cpio python3 git wget curl zip unzip gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
+            qemu-system-arm
+
+      - name: Clone kernel and toolchain
+        run: |
+          git clone --depth 1 --single-branch --branch A15 https://github.com/Blacksmithyogi/kernel_xiaomi_courbet.git kernel
+          git clone --depth 1 --single-branch --branch "$CLANG_BRANCH" "$CLANG_REPO" toolchains/clang
+
+      - name: Configure
+        working-directory: kernel
+        run: |
+          export PATH="$GITHUB_WORKSPACE/toolchains/clang/bin:$PATH"
+          make O=out ARCH=arm64 courbet_defconfig
+          ./scripts/config --file out/.config --set-str CONFIG_LOCALVERSION "-RubberSoul"
+          ./scripts/config --file out/.config \
+            -e ARM_GIC -e ARM_GIC_V3 -e ARM_AMBA \
+            -e SERIAL_AMBA_PL011 -e SERIAL_AMBA_PL011_CONSOLE \
+            -e VIRTIO -e VIRTIO_MMIO -e VIRTIO_BLK \
+            -e DEVTMPFS -e DEVTMPFS_MOUNT -e BLK_DEV_INITRD -e RD_GZIP
+          make O=out ARCH=arm64 olddefconfig
+          grep -E "CONFIG_LOCALVERSION=|PL011_CONSOLE|VIRTIO_MMIO|DEVTMPFS" out/.config
+
+      - name: Build
+        working-directory: kernel
+        run: |
+          set -o pipefail
+          export PATH="$GITHUB_WORKSPACE/toolchains/clang/bin:$PATH"
+          make -j$(nproc) O=out ARCH=arm64 \
+            CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            2>&1 | tee "$GITHUB_WORKSPACE/qemu-build.log"
+          ls -lh out/arch/arm64/boot/Image
+
+      - name: Make initramfs
+        run: |
+          set -e
+          BASE=https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/aarch64
+          TARBALL=$(curl -s "$BASE/" | grep -o 'alpine-minirootfs-[0-9.]*-aarch64.tar.gz' | head -1)
+          echo "using $TARBALL"
+          curl -sLO "$BASE/$TARBALL"
+          mkdir rootfs
+          tar -xzf "$TARBALL" -C rootfs
+          mkdir -p rootfs/proc rootfs/sys rootfs/dev
+          cat > rootfs/init <<'INIT'
+          #!/bin/busybox sh
+          /bin/busybox mount -t proc proc /proc
+          /bin/busybox mount -t sysfs sys /sys
+          /bin/busybox mount -t devtmpfs dev /dev 2>/dev/null
+          echo "QEMU SMOKE TEST: userspace alive"
+          /bin/busybox uname -a
+          /bin/busybox cat /proc/version
+          echo "QEMU SMOKE TEST PASS"
+          /bin/busybox poweroff -f
+          INIT
+          chmod +x rootfs/init
+          (cd rootfs && find . | cpio -o -H newc 2>/dev/null | gzip -9) > initramfs.cpio.gz
+          ls -lh initramfs.cpio.gz
+
+      - name: Boot in QEMU
+        run: |
+          set +e
+          timeout 180 qemu-system-aarch64 -M virt -cpu cortex-a72 -smp 2 -m 2048 \
+            -kernel kernel/out/arch/arm64/boot/Image \
+            -initrd initramfs.cpio.gz \
+            -nographic -no-reboot \
+            -append "console=ttyAMA0,115200 earlycon=pl011,0x09000000 rdinit=/init panic=10 loglevel=7" \
+            2>&1 | tee qemu-serial.log | tail -120
+          echo "=== assertions ==="
+          grep -E "Linux version 4\.14\.[0-9]+-openela-rc1-RubberSoul" qemu-serial.log
+          grep -E "QEMU SMOKE TEST PASS" qemu-serial.log
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qemu-smoke
+          path: |
+            qemu-serial.log
+            qemu-build.log
+          if-no-files-found: warn
+          retention-days: 30
