@@ -100,6 +100,7 @@ jobs:
           export ARCH=arm64 SUBARCH=arm64
           export PATH="$GITHUB_WORKSPACE/toolchains/clang/bin:$PATH"
           make O=out ARCH=arm64 "$DEFCONFIG"
+          ./scripts/config --file out/.config --set-str CONFIG_LOCALVERSION "-RubberSoul"
           make -j$(nproc) O=out ARCH=arm64 \
             CC=clang \
             CLANG_TRIPLE=aarch64-linux-gnu- \
@@ -120,8 +121,8 @@ jobs:
           else echo "no kernel image found"; ls -R kernel/out/arch/arm64/boot/ | head -30; exit 1; fi
           echo "using $IMG"
           cp "kernel/out/arch/arm64/boot/$IMG" ak3/zImage
-          sed -i 's/^device.name1=.*/device.name1=courbet/; s/^do.devicecheck=.*/do.devicecheck=1/' ak3/anykernel.sh
-          grep -n "^device.name1\|^do.devicecheck" ak3/anykernel.sh
+          sed -i 's/^device.name1=.*/device.name1=courbet/; s/^do.devicecheck=.*/do.devicecheck=1/; s/^kernel.string=.*/kernel.string=RubberSoul (courbet)/' ak3/anykernel.sh
+          grep -n "^device.name1\|^do.devicecheck\|^kernel.string" ak3/anykernel.sh
           if [ -f kernel/out/arch/arm64/boot/dtbo.img ]; then cp kernel/out/arch/arm64/boot/dtbo.img ak3/; fi
           cd ak3 && zip -r9 ../rubber-soul-courbet.zip * -x .git/\*
           cd ..
