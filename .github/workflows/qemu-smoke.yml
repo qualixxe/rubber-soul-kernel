@@ -44,7 +44,8 @@ jobs:
             -e ARM_GIC -e ARM_GIC_V3 -e ARM_AMBA \
             -e SERIAL_AMBA_PL011 -e SERIAL_AMBA_PL011_CONSOLE \
             -e VIRTIO -e VIRTIO_MMIO -e VIRTIO_BLK \
-            -e DEVTMPFS -e DEVTMPFS_MOUNT -e BLK_DEV_INITRD -e RD_GZIP
+            -e DEVTMPFS -e DEVTMPFS_MOUNT -e BLK_DEV_INITRD -e RD_GZIP \
+            -d QCOM_EARLY_RANDOM
           make O=out ARCH=arm64 olddefconfig
           grep -E "CONFIG_LOCALVERSION=|PL011_CONSOLE|VIRTIO_MMIO|DEVTMPFS" out/.config
 
